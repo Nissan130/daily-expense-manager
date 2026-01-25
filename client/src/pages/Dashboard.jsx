@@ -1,5 +1,8 @@
 // src/pages/Dashboard.jsx
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import AddExpenseForm from "../components/AddExpenseForm";
+import AddBudgetForm from "../components/AddBudgetForm";
+import { PieChart, TrendingUp, Calendar, Wallet, TrendingDown, Edit2, AlertCircle } from "lucide-react";
 
 const CATEGORIES = ["Food", "Transport", "Bills", "Shopping", "Health", "Other"];
 
@@ -12,90 +15,135 @@ const DUMMY_EXPENSES = [
   { _id: "6", title: "Snacks", amount: 80, category: "Food", date: "2026-01-19", notes: "" },
 ];
 
+const CATEGORY_COLORS = {
+  Food: "#10B981",
+  Transport: "#3B82F6",
+  Bills: "#8B5CF6",
+  Shopping: "#F59E0B",
+  Health: "#EF4444",
+  Other: "#6B7280"
+};
+
+const CATEGORY_ICONS = {
+  Food: "🍽️",
+  Transport: "🚗",
+  Bills: "📄",
+  Shopping: "🛍️",
+  Health: "🏥",
+  Other: "📦"
+};
+
 function fmtMoney(n) {
   const num = Number(n || 0);
-  return `৳${num.toFixed(2)}`;
+  return `৳${num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+
 function monthKey(dateStr) {
-  return (dateStr || "").slice(0, 7); // YYYY-MM
+  return (dateStr || "").slice(0, 7);
 }
+
 function yearKey(dateStr) {
-  return (dateStr || "").slice(0, 4); // YYYY
+  return (dateStr || "").slice(0, 4);
 }
 
-// --- Simple SVG Pie (donut) ---
-function polarToCartesian(cx, cy, r, angleDeg) {
-  const angleRad = ((angleDeg - 90) * Math.PI) / 180.0;
-  return { x: cx + r * Math.cos(angleRad), y: cy + r * Math.sin(angleRad) };
-}
-function describeArc(cx, cy, r, startAngle, endAngle) {
-  const start = polarToCartesian(cx, cy, r, endAngle);
-  const end = polarToCartesian(cx, cy, r, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-  return ["M", start.x, start.y, "A", r, r, 0, largeArcFlag, 0, end.x, end.y, "L", cx, cy, "Z"].join(" ");
-}
-
-function PieChart({ data, centerLabel, size = 220 }) {
+function PieChartComponent({ data, centerLabel, size = 220 }) {
   const total = data.reduce((s, d) => s + d.value, 0);
   const cx = size / 2;
   const cy = size / 2;
   const r = size / 2 - 10;
-
-  const colors = ["#111827", "#374151", "#6B7280", "#9CA3AF", "#D1D5DB", "#E5E7EB"];
+  const innerR = r * 0.6;
 
   if (!total) {
     return (
-      <div className="h-[240px] flex items-center justify-center rounded-2xl border border-gray-200 bg-gray-50">
-        <p className="text-sm text-gray-500">No data for this period</p>
+      <div className="h-[240px] flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50/50">
+        <PieChart className="w-12 h-12 text-gray-400 mb-2" />
+        <p className="text-sm text-gray-500">No expenses for this period</p>
       </div>
     );
   }
 
   let startAngle = 0;
-  const slices = data.map((d, i) => {
+  const slices = data.map((d) => {
     const angle = (d.value / total) * 360;
     const endAngle = startAngle + angle;
-    const path = describeArc(cx, cy, r, startAngle, endAngle);
-    const slice = { ...d, path, color: colors[i % colors.length] };
+    const largeArc = angle > 180 ? 1 : 0;
+    
+    const x1 = cx + r * Math.cos((startAngle * Math.PI) / 180);
+    const y1 = cy + r * Math.sin((startAngle * Math.PI) / 180);
+    const x2 = cx + r * Math.cos((endAngle * Math.PI) / 180);
+    const y2 = cy + r * Math.sin((endAngle * Math.PI) / 180);
+    
+    const innerX1 = cx + innerR * Math.cos((startAngle * Math.PI) / 180);
+    const innerY1 = cy + innerR * Math.sin((startAngle * Math.PI) / 180);
+    const innerX2 = cx + innerR * Math.cos((endAngle * Math.PI) / 180);
+    const innerY2 = cy + innerR * Math.sin((endAngle * Math.PI) / 180);
+    
+    const path = `
+      M ${innerX1} ${innerY1}
+      L ${x1} ${y1}
+      A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}
+      L ${innerX2} ${innerY2}
+      A ${innerR} ${innerR} 0 ${largeArc} 0 ${innerX1} ${innerY1}
+      Z
+    `;
+    
+    const slice = { ...d, path, color: CATEGORY_COLORS[d.label] || "#6B7280" };
     startAngle = endAngle;
     return slice;
   });
 
   return (
-    <div className="flex flex-col sm:flex-row gap-6 items-center sm:items-start">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
-        {slices.map((s) => (
-          <path key={s.label} d={s.path} fill={s.color} />
-        ))}
-        <circle cx={cx} cy={cy} r={r * 0.58} fill="white" />
-        <text x={cx} y={cy - 2} textAnchor="middle" className="fill-gray-900" fontSize="14" fontWeight="700">
-          {fmtMoney(total)}
-        </text>
-        <text x={cx} y={cy + 16} textAnchor="middle" className="fill-gray-500" fontSize="11">
-          {centerLabel}
-        </text>
-      </svg>
+    <div className="flex flex-col lg:flex-row gap-8 items-center lg:items-start">
+      <div className="relative shrink-0">
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="drop-shadow-sm">
+          {slices.map((s) => (
+            <path key={s.label} d={s.path} fill={s.color} className="transition-all hover:opacity-90" />
+          ))}
+          <circle cx={cx} cy={cy} r={innerR * 0.9} fill="white" />
+          <text x={cx} y={cy - 8} textAnchor="middle" className="fill-gray-900" fontSize="18" fontWeight="700">
+            {fmtMoney(total)}
+          </text>
+          <text x={cx} y={cy + 16} textAnchor="middle" className="fill-gray-500" fontSize="12">
+            {centerLabel}
+          </text>
+        </svg>
+      </div>
 
-      <div className="w-full">
-        <h3 className="text-sm font-semibold text-gray-900">Category breakdown</h3>
-        <p className="text-xs text-gray-500 mt-1">Share of spending for the selected period.</p>
+      <div className="flex-1 w-full">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Category Breakdown</h3>
+        <p className="text-sm text-gray-500 mb-6">Share of spending for the selected period</p>
 
-        <div className="mt-4 space-y-2">
+        <div className="space-y-4">
           {slices
             .slice()
             .sort((a, b) => b.value - a.value)
             .map((s) => {
               const pct = total ? (s.value / total) * 100 : 0;
               return (
-                <div key={s.label} className="flex items-center gap-3">
-                  <span className="h-3 w-3 rounded-full" style={{ backgroundColor: s.color }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm text-gray-800 truncate">{s.label}</p>
-                      <p className="text-sm font-semibold text-gray-900">{fmtMoney(s.value)}</p>
+                <div key={s.label} className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="h-10 w-10 rounded-xl flex items-center justify-center text-lg">
+                      {CATEGORY_ICONS[s.label]}
                     </div>
-                    <div className="mt-1 h-2 rounded-full bg-gray-100 overflow-hidden">
-                      <div className="h-full" style={{ width: `${pct.toFixed(1)}%`, backgroundColor: s.color }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-3 mb-1">
+                        <p className="text-sm font-medium text-gray-800 truncate">{s.label}</p>
+                        <p className="text-sm font-semibold text-gray-900">{fmtMoney(s.value)}</p>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div 
+                            className="h-full rounded-full transition-all duration-500" 
+                            style={{ 
+                              width: `${pct.toFixed(1)}%`, 
+                              backgroundColor: s.color 
+                            }} 
+                          />
+                        </div>
+                        <span className="text-xs font-medium text-gray-600 w-12 text-right">
+                          {pct.toFixed(1)}%
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -109,14 +157,11 @@ function PieChart({ data, centerLabel, size = 220 }) {
 
 export default function Dashboard() {
   const [expenses, setExpenses] = useState(DUMMY_EXPENSES);
-
-  // Dropdown filter for the single summary card + pie chart
-  const [period, setPeriod] = useState("month"); // "month" | "year" | "all"
-
-  // Modal
+  const [period, setPeriod] = useState("month");
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState("expense");
+  const [isEditingBudget, setIsEditingBudget] = useState(false);
 
-  // Expense form (modal)
   const [expenseForm, setExpenseForm] = useState({
     title: "",
     amount: "",
@@ -125,45 +170,54 @@ export default function Dashboard() {
     notes: "",
   });
 
-  // Budget form (modal) + saved budgets (design-only)
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const currentYear = String(now.getFullYear());
 
-  const [budgets, setBudgets] = useState(() => ({
-    // design-only starter budgets
+  const [budgets, setBudgets] = useState({
     month: { [currentMonth]: 15000 },
     year: { [currentYear]: 120000 },
-  }));
+  });
 
-  const totalAllTime = useMemo(
-    () => expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0),
+  const [budgetForm, setBudgetForm] = useState({
+    mode: "month",
+    key: currentMonth,
+    amount: "",
+    notes: "",
+  });
+
+  // Prevent background scroll
+  useEffect(() => {
+    if (modalOpen) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => (document.body.style.overflow = "");
+  }, [modalOpen]);
+
+  // Calculations
+  const totalAllTime = useMemo(() => 
+    expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0), 
     [expenses]
   );
 
-  const totalThisMonth = useMemo(() => {
-    return expenses
+  const totalThisMonth = useMemo(() => 
+    expenses
       .filter((e) => monthKey(e.date) === currentMonth)
-      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
-  }, [expenses, currentMonth]);
+      .reduce((sum, e) => sum + Number(e.amount || 0), 0), 
+    [expenses, currentMonth]
+  );
 
-  const totalThisYear = useMemo(() => {
-    return expenses
+  const totalThisYear = useMemo(() => 
+    expenses
       .filter((e) => yearKey(e.date) === currentYear)
-      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
-  }, [expenses, currentYear]);
+      .reduce((sum, e) => sum + Number(e.amount || 0), 0), 
+    [expenses, currentYear]
+  );
 
   const selectedTotal = useMemo(() => {
     if (period === "month") return totalThisMonth;
     if (period === "year") return totalThisYear;
     return totalAllTime;
   }, [period, totalThisMonth, totalThisYear, totalAllTime]);
-
-  const selectedLabel = useMemo(() => {
-    if (period === "month") return `Spent this month (${currentMonth})`;
-    if (period === "year") return `Spent this year (${currentYear})`;
-    return "Total spent (All time)";
-  }, [period, currentMonth, currentYear]);
 
   const pieData = useMemo(() => {
     const base = new Map();
@@ -186,7 +240,6 @@ export default function Dashboard() {
       .filter((d) => d.value > 0);
   }, [expenses, period, currentMonth, currentYear]);
 
-  // Budget view (design-only)
   const budgetAmount = useMemo(() => {
     if (period === "month") return budgets.month?.[currentMonth] || 0;
     if (period === "year") return budgets.year?.[currentYear] || 0;
@@ -198,11 +251,42 @@ export default function Dashboard() {
     return Math.min(100, (selectedTotal / budgetAmount) * 100);
   }, [selectedTotal, budgetAmount]);
 
+  // Calculate if budget is exceeded
+  const isBudgetExceeded = useMemo(() => {
+    return budgetAmount > 0 && selectedTotal > budgetAmount;
+  }, [selectedTotal, budgetAmount]);
+
+  // Calculate extra cost amount (only positive when exceeded)
+  const extraCostAmount = useMemo(() => {
+    if (!isBudgetExceeded) return 0;
+    return selectedTotal - budgetAmount;
+  }, [selectedTotal, budgetAmount, isBudgetExceeded]);
+
+  // Calculate remaining budget (negative when exceeded)
+  const remainingBudget = useMemo(() => {
+    return budgetAmount - selectedTotal;
+  }, [budgetAmount, selectedTotal]);
+
+  const averageDailySpending = useMemo(() => {
+    if (period === "month") return totalThisMonth / now.getDate();
+    if (period === "year") return totalThisYear / Math.ceil((now - new Date(currentYear, 0, 1)) / (1000 * 60 * 60 * 24));
+    return totalAllTime / 365;
+  }, [totalThisMonth, totalThisYear, totalAllTime, period, currentYear]);
+
   function openModal() {
     setModalOpen(true);
+    setModalTab("expense");
   }
+
   function closeModal() {
     setModalOpen(false);
+    setIsEditingBudget(false);
+    setBudgetForm({
+      mode: "month",
+      key: currentMonth,
+      amount: "",
+      notes: "",
+    });
   }
 
   function addExpense(e) {
@@ -231,13 +315,6 @@ export default function Dashboard() {
     closeModal();
   }
 
-  const [budgetForm, setBudgetForm] = useState({
-    mode: "month", // month | year
-    key: currentMonth, // month: YYYY-MM, year: YYYY
-    amount: "",
-    notes: "",
-  });
-
   function saveBudget(e) {
     e.preventDefault();
     const amount = Number(budgetForm.amount);
@@ -255,361 +332,379 @@ export default function Dashboard() {
       return next;
     });
 
-    setBudgetForm((prev) => ({ ...prev, amount: "", notes: "" }));
+    setBudgetForm({
+      mode: "month",
+      key: currentMonth,
+      amount: "",
+      notes: "",
+    });
+    setIsEditingBudget(false);
     closeModal();
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-5 flex items-end justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
-            <p className="text-sm text-gray-500">Overview of your spending.</p>
-          </div>
+  function editCurrentBudget() {
+    const currentBudget = period === "month" 
+      ? { type: "month", period: currentMonth, amount: budgetAmount }
+      : { type: "year", period: currentYear, amount: budgetAmount };
+    
+    if (currentBudget.amount > 0) {
+      setIsEditingBudget(true);
+      setBudgetForm({
+        mode: currentBudget.type,
+        key: currentBudget.period,
+        amount: currentBudget.amount.toString(),
+        notes: "",
+      });
+      setModalTab("budget");
+      setModalOpen(true);
+    }
+  }
 
-          {/* Dropdown filter */}
-          <div className="w-44">
-            <label className="text-xs font-medium text-gray-500">Filter</label>
-            <select
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
-            >
-              <option value="month">This Month</option>
-              <option value="year">This Year</option>
-              <option value="all">All Time</option>
-            </select>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      {/* Header */}
+      <header className="bg-white/90 backdrop-blur-xl border-b border-gray-200/50  top-0 z-50 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Expense Manager</h1>
+              <p className="text-sm text-gray-600 mt-1">Track and manage your spending efficiently</p>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <div className="relative w-48">
+                <select
+                  value={period}
+                  onChange={(e) => setPeriod(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 bg-white pl-10 pr-4 py-2.5 text-sm font-medium text-gray-700 outline-none focus:ring-2 focus:ring-gray-900/10"
+                >
+                  <option value="month">This Month</option>
+                  <option value="year">This Year</option>
+                  <option value="all">All Time</option>
+                </select>
+                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-        {/* Single summary card (based on dropdown) */}
-        <section className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <p className="text-xs text-gray-500">{selectedLabel}</p>
-              <p className="mt-1 text-4xl font-bold text-gray-900">{fmtMoney(selectedTotal)}</p>
-              <p className="mt-2 text-sm text-gray-500">
-                Change the filter from the dropdown to view different periods.
-              </p>
-            </div>
-
-            {/* Budget mini card to fill the right side nicely */}
-            <div className="w-full sm:w-[360px] rounded-2xl border border-gray-200 bg-gray-50 p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-900">Budget</p>
-                <span className="text-xs text-gray-500">
-                  {period === "all" ? "—" : period === "month" ? currentMonth : currentYear}
-                </span>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Total Spent</p>
+                <p className="mt-2 text-3xl font-bold text-gray-900">{fmtMoney(selectedTotal)}</p>
               </div>
-
-              {period === "all" ? (
-                <p className="mt-2 text-sm text-gray-500">
-                  Budget is shown for Month/Year filters.
-                </p>
-              ) : budgetAmount ? (
-                <>
-                  <div className="mt-2 flex items-center justify-between">
-                    <p className="text-sm text-gray-700">Used</p>
-                    <p className="text-sm font-semibold text-gray-900">{budgetPct.toFixed(0)}%</p>
-                  </div>
-                  <div className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden">
-                    <div className="h-full bg-gray-900" style={{ width: `${budgetPct}%` }} />
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-sm">
-                    <p className="text-gray-600">{fmtMoney(selectedTotal)} spent</p>
-                    <p className="font-semibold text-gray-900">{fmtMoney(budgetAmount)} budget</p>
-                  </div>
-                </>
-              ) : (
-                <p className="mt-2 text-sm text-gray-500">
-                  No budget set for this period. Tap “+” to add one.
-                </p>
-              )}
+              <div className="h-12 w-12 rounded-xl bg-gray-900/10 flex items-center justify-center">
+                <Wallet className="text-gray-900" size={24} />
+              </div>
             </div>
-          </div>
-        </section>
-
-        {/* Balanced layout: chart left, small cards right (no empty right side) */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Pie chart card */}
-          <div className="lg:col-span-2 bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900">Expenses by category</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Showing:{" "}
-              <span className="font-medium text-gray-900">
-                {period === "month" ? currentMonth : period === "year" ? currentYear : "All time"}
-              </span>
+            <p className="text-xs text-gray-500 mt-4">
+              {period === "month" ? "This month" : period === "year" ? "This year" : "All time"}
             </p>
+          </div>
 
-            <div className="mt-6">
-              <PieChart
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Budget Used</p>
+                <p className="mt-2 text-3xl font-bold text-gray-900">{budgetPct.toFixed(1)}%</p>
+              </div>
+              <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center">
+                <TrendingUp className="text-blue-600" size={24} />
+              </div>
+            </div>
+            <div className="mt-4 h-2 rounded-full bg-gray-200 overflow-hidden">
+              <div 
+                className={`h-full rounded-full transition-all duration-500 ${
+                  budgetPct > 100 ? 'bg-red-500' : budgetPct > 90 ? 'bg-red-400' : budgetPct > 70 ? 'bg-yellow-500' : 'bg-green-500'
+                }`}
+                style={{ width: `${Math.min(budgetPct, 100)}%` }}
+              />
+            </div>
+            {isBudgetExceeded && (
+              <div className="mt-3 flex items-center gap-2 text-sm text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">
+                <AlertCircle size={14} />
+                <span>Exceeded by {fmtMoney(extraCostAmount)}</span>
+              </div>
+            )}
+          </div>
+
+          <div className={`bg-white rounded-2xl border ${isBudgetExceeded ? 'border-red-200' : 'border-gray-200'} p-6 shadow-sm`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Remaining Budget</p>
+                <p className={`mt-2 text-3xl font-bold ${isBudgetExceeded ? 'text-red-600' : 'text-gray-900'}`}>
+                  {isBudgetExceeded ? `-${fmtMoney(extraCostAmount)}` : fmtMoney(Math.max(0, remainingBudget))}
+                </p>
+              </div>
+              <div className={`h-12 w-12 rounded-xl ${isBudgetExceeded ? 'bg-red-100' : 'bg-green-100'} flex items-center justify-center`}>
+                {isBudgetExceeded ? (
+                  <AlertCircle className="text-red-600" size={24} />
+                ) : (
+                  <TrendingDown className="text-green-600" size={24} />
+                )}
+              </div>
+            </div>
+            {isBudgetExceeded ? (
+              <div className="mt-4">
+                <div className="flex items-center gap-2 text-sm text-red-600 mb-2">
+                  <AlertCircle size={14} />
+                  <span>Budget exceeded</span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  You've spent {fmtMoney(extraCostAmount)} more than your budget of {fmtMoney(budgetAmount)}
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 mt-4">
+                {budgetAmount > 0 ? `Out of ${fmtMoney(budgetAmount)}` : "No budget set"}
+              </p>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Avg. Daily</p>
+                <p className="mt-2 text-3xl font-bold text-gray-900">{fmtMoney(averageDailySpending)}</p>
+              </div>
+              <div className="h-12 w-12 rounded-xl bg-purple-100 flex items-center justify-center">
+                <Calendar className="text-purple-600" size={24} />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-4">Average spending per day</p>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column - Chart */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-gray-900">Spending Overview</h2>
+                <p className="text-sm text-gray-500 mt-1">Visual breakdown of your expenses</p>
+              </div>
+              <PieChartComponent
                 data={pieData}
-                centerLabel={period === "month" ? "This month" : period === "year" ? "This year" : "All time"}
+                centerLabel={period === "month" ? "This Month" : period === "year" ? "This Year" : "All Time"}
+                size={260}
               />
             </div>
           </div>
 
-          {/* Right column cards */}
-          <div className="lg:col-span-1 space-y-6">
-            <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-900">Quick actions</h3>
-              <p className="text-sm text-gray-500 mt-1">Add an expense or set a budget.</p>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={openModal}
-                  className="rounded-2xl bg-gray-900 text-white py-3 text-sm font-medium hover:bg-gray-800 transition"
-                >
-                  Add Expense
-                </button>
-                <button
-                  type="button"
-                  onClick={openModal}
-                  className="rounded-2xl border border-gray-300 bg-white py-3 text-sm font-medium hover:bg-gray-50 transition"
-                >
-                  Set Budget
-                </button>
+          {/* Right Column - Budget Section */}
+          <div className="space-y-8">
+            {/* Single Budget Card */}
+            <div className={`bg-white rounded-2xl border ${isBudgetExceeded ? 'border-red-200' : 'border-gray-200'} p-6 shadow-sm`}>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Budget</h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {period === "month" ? currentMonth : period === "year" ? currentYear : "All time"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {budgetAmount > 0 && (
+                    <button
+                      onClick={editCurrentBudget}
+                      className="inline-flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors"
+                      title="Edit budget"
+                    >
+                      <Edit2 size={12} />
+                      Edit
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setModalTab("budget");
+                      setModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 transition-colors"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-white">
+                      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                    </svg>
+                    {budgetAmount > 0 ? "Add New" : "Set Budget"}
+                  </button>
+                </div>
               </div>
-
-              <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                <p className="text-xs text-gray-500">Tip</p>
-                <p className="text-sm text-gray-700 mt-1">
-                  Keep budgets monthly—your category chart becomes more meaningful.
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-900">Selected period</h3>
-              <p className="text-sm text-gray-500 mt-1">{selectedLabel}</p>
-
-              <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                <p className="text-xs text-gray-500">Total</p>
-                <p className="mt-1 text-2xl font-bold text-gray-900">{fmtMoney(selectedTotal)}</p>
-              </div>
+              
+              {budgetAmount > 0 ? (
+                <>
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between text-sm mb-2">
+                        <span className="text-gray-600">Progress</span>
+                        <span className={`font-semibold ${isBudgetExceeded ? 'text-red-600' : 'text-gray-900'}`}>
+                          {budgetPct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="h-3 rounded-full bg-gray-200 overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-700 ${
+                            budgetPct > 100 ? 'bg-red-600' : 
+                            budgetPct > 90 ? 'bg-red-400' : 
+                            budgetPct > 70 ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(budgetPct, 100)}%` }}
+                        />
+                      </div>
+                      {isBudgetExceeded && (
+                        <div className="mt-2 flex items-center gap-2 text-sm text-red-600">
+                          <AlertCircle size={14} />
+                          <span>Exceeded by {fmtMoney(extraCostAmount)}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
+                      <div>
+                        <p className="text-sm text-gray-500">Spent</p>
+                        <p className={`text-lg font-semibold ${isBudgetExceeded ? 'text-red-600' : 'text-gray-900'}`}>
+                          {fmtMoney(selectedTotal)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500">Remaining</p>
+                        <p className={`text-lg font-semibold ${isBudgetExceeded ? 'text-red-600' : 'text-gray-900'}`}>
+                          {isBudgetExceeded ? `-${fmtMoney(extraCostAmount)}` : fmtMoney(Math.max(0, remainingBudget))}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="pt-4 border-t border-gray-100">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-500">Total Budget</p>
+                          <p className="text-2xl font-bold text-gray-900">{fmtMoney(budgetAmount)}</p>
+                          {isBudgetExceeded && (
+                            <div className="mt-1 text-xs text-red-600">
+                              You've exceeded by {fmtMoney(extraCostAmount)}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={editCurrentBudget}
+                          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                          title="Edit budget"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="h-16 w-16 mx-auto rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                    <Wallet className="text-gray-400" size={24} />
+                  </div>
+                  <p className="text-gray-500 mb-4">No budget set for this period</p>
+                  <button
+                    onClick={() => {
+                      setModalTab("budget");
+                      setModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 transition-colors"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-white">
+                      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                    </svg>
+                    Set Budget
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-        </section>
+        </div>
       </main>
 
-      {/* Floating + button (position improved: centered on mobile, aligned to container on desktop) */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-[calc((100vw-72rem)/2+1.25rem)] z-30">
-        <button
-          onClick={openModal}
-          className="h-14 w-14 rounded-2xl bg-gray-900 text-white shadow-lg hover:bg-gray-800 transition flex items-center justify-center"
-          aria-label="Add expense or budget"
-          type="button"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
+      {/* Floating Plus Button */}
+      <button
+        onClick={openModal}
+        className="fixed bottom-8 right-8 h-16 w-16 rounded-2xl bg-gradient-to-br from-gray-900 to-gray-800 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 flex items-center justify-center z-40"
+        aria-label="Add new"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+        </svg>
+      </button>
 
       {/* Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-40">
-          {/* Backdrop */}
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
+        <div className="fixed inset-0 z-50">
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={closeModal}
-            aria-label="Close modal backdrop"
           />
-
-          {/* Modal panel */}
-          <div className="absolute inset-x-0 bottom-0 sm:inset-0 sm:flex sm:items-center sm:justify-center p-4">
-            <div className="w-full sm:max-w-4xl bg-white rounded-3xl shadow-xl border border-gray-200 overflow-hidden">
-              {/* Modal header */}
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Add</h3>
-                  <p className="text-sm text-gray-500">Expense and budget options</p>
+          
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+              {/* Tabs */}
+              <div className="border-b border-gray-200">
+                <div className="flex">
+                  <button
+                    onClick={() => setModalTab("expense")}
+                    className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                      modalTab === "expense" 
+                        ? "text-gray-900 border-b-2 border-gray-900" 
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Add Expense
+                  </button>
+                  <button
+                    onClick={() => setModalTab("budget")}
+                    className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                      modalTab === "budget" 
+                        ? "text-gray-900 border-b-2 border-gray-900" 
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    {isEditingBudget ? "Edit Budget" : "Add Budget"}
+                  </button>
                 </div>
+              </div>
+
+              {/* Form Content */}
+              <div className="p-6">
+                {modalTab === "expense" ? (
+                  <AddExpenseForm
+                    expenseForm={expenseForm}
+                    setExpenseForm={setExpenseForm}
+                    onSubmit={addExpense}
+                    categories={CATEGORIES}
+                  />
+                ) : (
+                  <AddBudgetForm
+                    budgetForm={budgetForm}
+                    setBudgetForm={setBudgetForm}
+                    onSubmit={saveBudget}
+                    currentMonth={currentMonth}
+                    currentYear={currentYear}
+                    isEditing={isEditingBudget}
+                  />
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
                 <button
                   onClick={closeModal}
-                  type="button"
-                  className="rounded-xl border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 transition"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
                 >
-                  Close
+                  Cancel
                 </button>
-              </div>
-
-              {/* Modal body */}
-              <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Add Expense */}
-                <div className="rounded-2xl border border-gray-200 p-5">
-                  <h4 className="font-semibold text-gray-900">Add Expense</h4>
-                  <p className="text-sm text-gray-500 mt-1">Record a cash out item.</p>
-
-                  <form onSubmit={addExpense} className="mt-4 space-y-4">
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Title</label>
-                      <input
-                        value={expenseForm.title}
-                        onChange={(e) => setExpenseForm({ ...expenseForm, title: e.target.value })}
-                        placeholder="e.g., Lunch"
-                        className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-sm font-medium text-gray-700">Amount</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={expenseForm.amount}
-                          onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
-                          placeholder="e.g., 120"
-                          className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-sm font-medium text-gray-700">Date</label>
-                        <input
-                          type="date"
-                          value={expenseForm.date}
-                          onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
-                          className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Category</label>
-                      <select
-                        value={expenseForm.category}
-                        onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                        className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10 bg-white"
-                      >
-                        {CATEGORIES.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Notes (optional)</label>
-                      <textarea
-                        rows={3}
-                        value={expenseForm.notes}
-                        onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
-                        placeholder="Any extra detail..."
-                        className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full rounded-xl bg-gray-900 text-white py-2.5 font-medium hover:bg-gray-800 transition"
-                    >
-                      Save Expense
-                    </button>
-                  </form>
-                </div>
-
-                {/* Set Budget */}
-                <div className="rounded-2xl border border-gray-200 p-5">
-                  <h4 className="font-semibold text-gray-900">Set Budget</h4>
-                  <p className="text-sm text-gray-500 mt-1">Plan spending for month or year.</p>
-
-                  <form onSubmit={saveBudget} className="mt-4 space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-sm font-medium text-gray-700">Type</label>
-                        <select
-                          value={budgetForm.mode}
-                          onChange={(e) => {
-                            const mode = e.target.value;
-                            setBudgetForm((prev) => ({
-                              ...prev,
-                              mode,
-                              key: mode === "month" ? currentMonth : currentYear,
-                            }));
-                          }}
-                          className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10 bg-white"
-                        >
-                          <option value="month">Month</option>
-                          <option value="year">Year</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-sm font-medium text-gray-700">
-                          {budgetForm.mode === "month" ? "Month" : "Year"}
-                        </label>
-                        {budgetForm.mode === "month" ? (
-                          <input
-                            type="month"
-                            value={budgetForm.key}
-                            onChange={(e) => setBudgetForm((prev) => ({ ...prev, key: e.target.value }))}
-                            className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
-                          />
-                        ) : (
-                          <input
-                            type="number"
-                            value={budgetForm.key}
-                            onChange={(e) => setBudgetForm((prev) => ({ ...prev, key: e.target.value }))}
-                            className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
-                            placeholder="e.g., 2026"
-                          />
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Budget Amount</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={budgetForm.amount}
-                        onChange={(e) => setBudgetForm((prev) => ({ ...prev, amount: e.target.value }))}
-                        placeholder="e.g., 15000"
-                        className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Notes (optional)</label>
-                      <textarea
-                        rows={3}
-                        value={budgetForm.notes}
-                        onChange={(e) => setBudgetForm((prev) => ({ ...prev, notes: e.target.value }))}
-                        placeholder="e.g., January budget"
-                        className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full rounded-xl border border-gray-300 bg-white py-2.5 font-medium hover:bg-gray-50 transition"
-                    >
-                      Save Budget
-                    </button>
-
-                    <p className="text-xs text-gray-500">Design-only (later you can store budgets in DB).</p>
-                  </form>
-                </div>
-              </div>
-
-              {/* Modal footer */}
-              <div className="px-6 py-4 border-t border-gray-200 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
-                <p className="text-xs text-gray-500">Tip: Use Month budgets for best tracking.</p>
                 <button
-                  onClick={closeModal}
-                  type="button"
-                  className="rounded-xl bg-gray-900 text-white px-4 py-2 text-sm font-medium hover:bg-gray-800 transition"
+                  onClick={modalTab === "expense" ? addExpense : saveBudget}
+                  className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors"
                 >
-                  Done
+                  {modalTab === "expense" ? "Save Expense" : (isEditingBudget ? "Update Budget" : "Save Budget")}
                 </button>
               </div>
             </div>
