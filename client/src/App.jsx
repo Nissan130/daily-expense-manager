@@ -7,7 +7,7 @@ import History from "./pages/History";
 import ExportData from "./pages/ExportData";
 // import Settings from "./pages/Settings";
 import SignUp from "./pages/SignUp";
-import SignIn from './pages/SIgnIn';
+import SignIn from './pages/SignIn';
 
 // Component to check authentication
 function PrivateRoute({ children }) {
