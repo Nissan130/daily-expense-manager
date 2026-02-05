@@ -2,67 +2,73 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff, LogIn, AlertCircle } from "lucide-react";
+import { useGlobal } from "../context/GlobalContext";
 
 export default function SignIn() {
   const navigate = useNavigate();
+  const { signIn } = useGlobal();
+
   const [formData, setFormData] = useState({
     email: "",
     password: "",
-    rememberMe: false
+    rememberMe: false,
   });
+
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === "checkbox" ? checked : value,
     }));
-    // Clear error when user starts typing
     if (error) setError("");
+  };
+
+  const validate = () => {
+    if (!formData.email || !formData.password) {
+      setError("Please fill in all fields");
+      return false;
+    }
+    if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      setError("Please enter a valid email address");
+      return false;
+    }
+    if (formData.password.length < 6) {
+      setError("Password must be at least 6 characters long");
+      return false;
+    }
+    return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    if (!validate()) return;
+
     setIsLoading(true);
 
-    // Basic validation
-    if (!formData.email || !formData.password) {
-      setError("Please fill in all fields");
-      setIsLoading(false);
-      return;
-    }
+    try {
+      const result = await signIn({
+        email: formData.email,
+        password: formData.password,
+        rememberMe: formData.rememberMe,
+      });
 
-    if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      setError("Please enter a valid email address");
-      setIsLoading(false);
-      return;
-    }
+      if (!result.ok) {
+        setError(result.message || "Sign in failed. Please try again.");
+        return;
+      }
 
-    // Simulate API call
-    setTimeout(() => {
-      // For demo purposes, accept any email/password
-      console.log("Login attempt:", formData);
-      
-      // Mock successful login
-      localStorage.setItem("isAuthenticated", "true");
-      localStorage.setItem("userEmail", formData.email);
-      localStorage.setItem("userName", formData.email.split("@")[0]);
-      
-      setIsLoading(false);
       navigate("/");
-    }, 1500);
-  };
-
-  const handleDemoLogin = () => {
-    setFormData({
-      email: "demo@example.com",
-      password: "demopassword",
-      rememberMe: false
-    });
+    } catch (err) {
+      setError("Something went wrong. Please try again");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -73,12 +79,8 @@ export default function SignIn() {
             DE
           </div>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Welcome back
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Sign in to your expense manager account
-        </p>
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Welcome back</h2>
+        <p className="mt-2 text-center text-sm text-gray-600">Sign in to your expense manager account</p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -110,7 +112,7 @@ export default function SignIn() {
                   value={formData.email}
                   onChange={handleChange}
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl bg-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-                  placeholder="you@example.com"
+                  placeholder="Enter your email address"
                 />
               </div>
             </div>
@@ -132,7 +134,7 @@ export default function SignIn() {
                   value={formData.password}
                   onChange={handleChange}
                   className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-xl bg-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                 />
                 <button
                   type="button"
@@ -164,10 +166,7 @@ export default function SignIn() {
               </div>
 
               <div className="text-sm">
-                <Link
-                  to="/forgot-password"
-                  className="font-medium text-gray-900 hover:text-gray-700 transition-colors"
-                >
+                <Link to="/forgot-password" className="font-medium text-gray-900 hover:text-gray-700 transition-colors">
                   Forgot password?
                 </Link>
               </div>

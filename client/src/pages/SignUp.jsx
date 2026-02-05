@@ -1,34 +1,47 @@
 // src/pages/SignUp.jsx
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff, User, CheckCircle, AlertCircle } from "lucide-react";
+import { useGlobal } from "../context/GlobalContext";
 
 export default function SignUp() {
   const navigate = useNavigate();
+  const { signUp } = useGlobal();
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     password: "",
     confirmPassword: "",
-    agreeTerms: false
+    agreeTerms: false,
   });
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [passwordStrength, setPasswordStrength] = useState(0);
 
+  const strengthText = useMemo(() => {
+    const texts = ["Very weak", "Weak", "Fair", "Good", "Strong"];
+    return texts[passwordStrength] || "Very weak";
+  }, [passwordStrength]);
+
+  const strengthColor = useMemo(() => {
+    const colors = ["bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-blue-500", "bg-green-500"];
+    return colors[passwordStrength] || "bg-gray-300";
+  }, [passwordStrength]);
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
+
+    setFormData((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === "checkbox" ? checked : value,
     }));
 
-    // Clear error when user starts typing
     if (error) setError("");
 
-    // Calculate password strength
     if (name === "password") {
       let strength = 0;
       if (value.length >= 8) strength += 1;
@@ -40,40 +53,23 @@ export default function SignUp() {
   };
 
   const validateForm = () => {
-    if (!formData.name.trim()) {
-      setError("Please enter your name");
-      return false;
-    }
+    if (!formData.name.trim()) return setError("Please enter your name"), false;
 
-    if (!formData.email.trim()) {
-      setError("Please enter your email address");
-      return false;
-    }
+    if (!formData.email.trim()) return setError("Please enter your email address"), false;
 
-    if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      setError("Please enter a valid email address");
-      return false;
-    }
+    if (!/\S+@\S+\.\S+/.test(formData.email))
+      return setError("Please enter a valid email address"), false;
 
-    if (!formData.password) {
-      setError("Please enter a password");
-      return false;
-    }
+    if (!formData.password) return setError("Please enter a password"), false;
 
-    if (formData.password.length < 8) {
-      setError("Password must be at least 8 characters long");
-      return false;
-    }
+    if (formData.password.length < 6)
+      return setError("Password must be at least 6 characters long"), false;
 
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match");
-      return false;
-    }
+    if (formData.password !== formData.confirmPassword)
+      return setError("Passwords do not match"), false;
 
-    if (!formData.agreeTerms) {
-      setError("You must agree to the Terms of Service");
-      return false;
-    }
+    if (!formData.agreeTerms)
+      return setError("You must agree to the Terms of Service"), false;
 
     return true;
   };
@@ -82,63 +78,46 @@ export default function SignUp() {
     e.preventDefault();
     setError("");
 
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsLoading(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      console.log("Signup attempt:", formData);
-      
-      // Mock successful signup
-      localStorage.setItem("isAuthenticated", "true");
-      localStorage.setItem("userEmail", formData.email);
-      localStorage.setItem("userName", formData.name);
-      
+    try {
+      const result = await signUp({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (!result.ok) {
+        // keep your nice backend messages
+        setError(result.message || "Signup failed. Please try again.");
+        return;
+      }
+
+      // Your current flow is "signup -> go to signin"
+      navigate("/signin");
+    } catch (err) {
+      setError("Cannot connect to server. Make sure backend is running on port 5000.");
+    } finally {
       setIsLoading(false);
-      navigate("/");
-    }, 1500);
-  };
-
-  const getPasswordStrengthText = () => {
-    const texts = ["Very weak", "Weak", "Fair", "Good", "Strong"];
-    return texts[passwordStrength] || "Very weak";
-  };
-
-  const getPasswordStrengthColor = () => {
-    const colors = ["bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-blue-500", "bg-green-500"];
-    return colors[passwordStrength] || "bg-gray-300";
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col justify-center py-10 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
           <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-gray-900 to-gray-800 text-white flex items-center justify-center font-bold text-2xl shadow-lg">
             DE
           </div>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Create your account
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Start managing your expenses effectively
-        </p>
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Create your account</h2>
+        <p className="mt-2 text-center text-sm text-gray-600">Start managing your expenses effectively</p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white/95 backdrop-blur-xl py-8 px-4 shadow-xl rounded-2xl border border-gray-200/50 sm:px-10">
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
-              <div className="flex items-center gap-2 text-red-700">
-                <AlertCircle size={18} />
-                <span className="font-medium">{error}</span>
-              </div>
-            </div>
-          )}
-
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
@@ -157,7 +136,7 @@ export default function SignUp() {
                   value={formData.name}
                   onChange={handleChange}
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl bg-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-                  placeholder="John Doe"
+                  placeholder="Your full name"
                 />
               </div>
             </div>
@@ -179,7 +158,7 @@ export default function SignUp() {
                   value={formData.email}
                   onChange={handleChange}
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl bg-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-                  placeholder="you@example.com"
+                  placeholder="Your email address"
                 />
               </div>
             </div>
@@ -201,11 +180,11 @@ export default function SignUp() {
                   value={formData.password}
                   onChange={handleChange}
                   className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-xl bg-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-                  placeholder="••••••••"
+                  placeholder="Set a new password"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={() => setShowPassword((s) => !s)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
                 >
                   {showPassword ? (
@@ -216,33 +195,43 @@ export default function SignUp() {
                 </button>
               </div>
 
-              {/* Password strength indicator */}
               {formData.password && (
                 <div className="mt-3">
                   <div className="flex items-center justify-between text-sm mb-1">
                     <span className="text-gray-600">Password strength</span>
-                    <span className="font-medium text-gray-900">
-                      {getPasswordStrengthText()}
-                    </span>
+                    <span className="font-medium text-gray-900">{strengthText}</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                    <div 
-                      className={`h-full rounded-full transition-all duration-300 ${getPasswordStrengthColor()}`}
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${strengthColor}`}
                       style={{ width: `${(passwordStrength / 4) * 100}%` }}
                     />
                   </div>
                   <div className="mt-2 text-xs text-gray-500 space-y-1">
                     <div className="flex items-center gap-2">
-                      <CheckCircle size={12} className={formData.password.length >= 8 ? "text-green-500" : "text-gray-300"} />
-                      <span>At least 8 characters</span>
+                      <CheckCircle
+                        size={12}
+                        className={formData.password.length >= 6 ? "text-green-500" : "text-gray-300"}
+                      />
+                      <span>At least 6 characters</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <CheckCircle size={12} className={/[A-Z]/.test(formData.password) ? "text-green-500" : "text-gray-300"} />
+                      <CheckCircle
+                        size={12}
+                        className={/[A-Z]/.test(formData.password) ? "text-green-500" : "text-gray-300"}
+                      />
                       <span>One uppercase letter</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <CheckCircle size={12} className={/[0-9]/.test(formData.password) ? "text-green-500" : "text-gray-300"} />
-                      <span>One number</span>
+                      <CheckCircle
+                        size={12}
+                        className={
+                          /[0-9]/.test(formData.password) && /[^A-Za-z0-9]/.test(formData.password)
+                            ? "text-green-500"
+                            : "text-gray-300"
+                        }
+                      />
+                      <span>One number &amp; special character</span>
                     </div>
                   </div>
                 </div>
@@ -266,11 +255,11 @@ export default function SignUp() {
                   value={formData.confirmPassword}
                   onChange={handleChange}
                   className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-xl bg-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-                  placeholder="••••••••"
+                  placeholder="Confirm your new password"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  onClick={() => setShowConfirmPassword((s) => !s)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
                 >
                   {showConfirmPassword ? (
@@ -281,6 +270,15 @@ export default function SignUp() {
                 </button>
               </div>
             </div>
+
+            {error && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
+                <div className="flex items-center gap-2 text-red-700">
+                  <AlertCircle size={18} />
+                  <span className="font-medium">{error}</span>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center">
               <input

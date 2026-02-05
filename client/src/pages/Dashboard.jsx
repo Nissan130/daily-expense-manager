@@ -1,19 +1,16 @@
 // src/pages/Dashboard.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AddExpenseForm from "../components/AddExpenseForm";
 import AddBudgetForm from "../components/AddBudgetForm";
-import { PieChart, TrendingUp, Calendar, Wallet, TrendingDown, Edit2, AlertCircle } from "lucide-react";
+import { PieChart, Calendar, Wallet, TrendingDown, AlertCircle } from "lucide-react";
+import { useGlobal } from "../context/GlobalContext";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
+
+const getUserToken = () =>
+  sessionStorage.getItem("user_token") || localStorage.getItem("user_token") || "";
 
 const CATEGORIES = ["Food", "Transport", "Bills", "Shopping", "Health", "Other"];
-
-const DUMMY_EXPENSES = [
-  { _id: "1", title: "Lunch", amount: 120, category: "Food", date: "2026-01-25", notes: "Rice + chicken" },
-  { _id: "2", title: "Bus Fare", amount: 40, category: "Transport", date: "2026-01-25", notes: "" },
-  { _id: "3", title: "Internet Bill", amount: 1200, category: "Bills", date: "2026-01-24", notes: "Monthly" },
-  { _id: "4", title: "Groceries", amount: 560, category: "Shopping", date: "2026-01-21", notes: "Vegetables & fruits" },
-  { _id: "5", title: "Medicine", amount: 220, category: "Health", date: "2026-01-20", notes: "" },
-  { _id: "6", title: "Snacks", amount: 80, category: "Food", date: "2026-01-19", notes: "" },
-];
 
 const CATEGORY_COLORS = {
   Food: "#10B981",
@@ -21,7 +18,7 @@ const CATEGORY_COLORS = {
   Bills: "#8B5CF6",
   Shopping: "#F59E0B",
   Health: "#EF4444",
-  Other: "#6B7280"
+  Other: "#6B7280",
 };
 
 const CATEGORY_ICONS = {
@@ -30,12 +27,15 @@ const CATEGORY_ICONS = {
   Bills: "📄",
   Shopping: "🛍️",
   Health: "🏥",
-  Other: "📦"
+  Other: "📦",
 };
 
 function fmtMoney(n) {
   const num = Number(n || 0);
-  return `৳${num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `৳${num.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function monthKey(dateStr) {
@@ -46,17 +46,54 @@ function yearKey(dateStr) {
   return (dateStr || "").slice(0, 4);
 }
 
+function inRange(dateStr, from, to) {
+  if (!dateStr) return false;
+  if (from && dateStr < from) return false;
+  if (to && dateStr > to) return false;
+  return true;
+}
+
+function monthFromDate(dateStr) {
+  return (dateStr || "").slice(0, 7); // YYYY-MM-DD -> YYYY-MM
+}
+
+function monthInRange(month, fromDate, toDate) {
+  if (!month) return false;
+
+  const fromMonth = fromDate ? monthFromDate(fromDate) : "";
+  const toMonth = toDate ? monthFromDate(toDate) : "";
+
+  if (fromMonth && month < fromMonth) return false;
+  if (toMonth && month > toMonth) return false;
+  return true;
+}
+
 function PieChartComponent({ data, centerLabel, size = 220 }) {
+  const [chartSize, setChartSize] = useState(size);
+
+  useEffect(() => {
+    const updateChartSize = () => {
+      if (window.innerWidth < 640) setChartSize(180);
+      else if (window.innerWidth < 768) setChartSize(200);
+      else if (window.innerWidth < 1024) setChartSize(220);
+      else setChartSize(260);
+    };
+
+    updateChartSize();
+    window.addEventListener("resize", updateChartSize);
+    return () => window.removeEventListener("resize", updateChartSize);
+  }, []);
+
   const total = data.reduce((s, d) => s + d.value, 0);
-  const cx = size / 2;
-  const cy = size / 2;
-  const r = size / 2 - 10;
+  const cx = chartSize / 2;
+  const cy = chartSize / 2;
+  const r = chartSize / 2 - 10;
   const innerR = r * 0.6;
 
   if (!total) {
     return (
-      <div className="h-[240px] flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50/50">
-        <PieChart className="w-12 h-12 text-gray-400 mb-2" />
+      <div className="h-[240px] sm:h-[280px] flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50/50">
+        <PieChart className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400 mb-2" />
         <p className="text-sm text-gray-500">No expenses for this period</p>
       </div>
     );
@@ -67,17 +104,17 @@ function PieChartComponent({ data, centerLabel, size = 220 }) {
     const angle = (d.value / total) * 360;
     const endAngle = startAngle + angle;
     const largeArc = angle > 180 ? 1 : 0;
-    
+
     const x1 = cx + r * Math.cos((startAngle * Math.PI) / 180);
     const y1 = cy + r * Math.sin((startAngle * Math.PI) / 180);
     const x2 = cx + r * Math.cos((endAngle * Math.PI) / 180);
     const y2 = cy + r * Math.sin((endAngle * Math.PI) / 180);
-    
+
     const innerX1 = cx + innerR * Math.cos((startAngle * Math.PI) / 180);
     const innerY1 = cy + innerR * Math.sin((startAngle * Math.PI) / 180);
     const innerX2 = cx + innerR * Math.cos((endAngle * Math.PI) / 180);
     const innerY2 = cy + innerR * Math.sin((endAngle * Math.PI) / 180);
-    
+
     const path = `
       M ${innerX1} ${innerY1}
       L ${x1} ${y1}
@@ -86,16 +123,16 @@ function PieChartComponent({ data, centerLabel, size = 220 }) {
       A ${innerR} ${innerR} 0 ${largeArc} 0 ${innerX1} ${innerY1}
       Z
     `;
-    
+
     const slice = { ...d, path, color: CATEGORY_COLORS[d.label] || "#6B7280" };
     startAngle = endAngle;
     return slice;
   });
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 items-center lg:items-start">
+    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-center lg:items-start">
       <div className="relative shrink-0">
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="drop-shadow-sm">
+        <svg width={chartSize} height={chartSize} viewBox={`0 0 ${chartSize} ${chartSize}`} className="drop-shadow-sm">
           {slices.map((s) => (
             <path key={s.label} d={s.path} fill={s.color} className="transition-all hover:opacity-90" />
           ))}
@@ -132,17 +169,12 @@ function PieChartComponent({ data, centerLabel, size = 220 }) {
                       </div>
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
-                          <div 
-                            className="h-full rounded-full transition-all duration-500" 
-                            style={{ 
-                              width: `${pct.toFixed(1)}%`, 
-                              backgroundColor: s.color 
-                            }} 
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct.toFixed(1)}%`, backgroundColor: s.color }}
                           />
                         </div>
-                        <span className="text-xs font-medium text-gray-600 w-12 text-right">
-                          {pct.toFixed(1)}%
-                        </span>
+                        <span className="text-xs font-medium text-gray-600 w-12 text-right">{pct.toFixed(1)}%</span>
                       </div>
                     </div>
                   </div>
@@ -156,11 +188,28 @@ function PieChartComponent({ data, centerLabel, size = 220 }) {
 }
 
 export default function Dashboard() {
-  const [expenses, setExpenses] = useState(DUMMY_EXPENSES);
-  const [period, setPeriod] = useState("month");
+  const { user } = useGlobal();
+
+  // ✅ Real data
+  const [expenses, setExpenses] = useState([]);
+  const [allBudgets, setAllBudgets] = useState([]);
+
+  console.log(expenses)
+
+  const [expensesLoading, setExpensesLoading] = useState(false);
+  const [budgetLoading, setBudgetLoading] = useState(false);
+  const [pageError, setPageError] = useState("");
+
+  // dropdown
+  const [period, setPeriod] = useState("month"); // month | year | all | custom
+  const [customRange, setCustomRange] = useState({ from: "", to: "" });
+
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState("expense");
-  const [isEditingBudget, setIsEditingBudget] = useState(false);
+
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const currentYear = String(now.getFullYear());
 
   const [expenseForm, setExpenseForm] = useState({
     title: "",
@@ -170,21 +219,14 @@ export default function Dashboard() {
     notes: "",
   });
 
-  const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const currentYear = String(now.getFullYear());
-
-  const [budgets, setBudgets] = useState({
-    month: { [currentMonth]: 15000 },
-    year: { [currentYear]: 120000 },
-  });
-
   const [budgetForm, setBudgetForm] = useState({
-    mode: "month",
     key: currentMonth,
     amount: "",
     notes: "",
   });
+
+  // used to ignore stale responses when period changes quickly
+  const reqSeqRef = useRef(0);
 
   // Prevent background scroll
   useEffect(() => {
@@ -193,44 +235,133 @@ export default function Dashboard() {
     return () => (document.body.style.overflow = "");
   }, [modalOpen]);
 
-  // Calculations
-  const totalAllTime = useMemo(() => 
-    expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0), 
-    [expenses]
-  );
+  const authHeaders = () => {
+    const user_token = getUserToken();
+    return {
+      Authorization: `Bearer ${user_token}`,
+    };
+  };
 
-  const totalThisMonth = useMemo(() => 
-    expenses
-      .filter((e) => monthKey(e.date) === currentMonth)
-      .reduce((sum, e) => sum + Number(e.amount || 0), 0), 
-    [expenses, currentMonth]
-  );
+  async function safeJson(res) {
+    try {
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
 
-  const totalThisYear = useMemo(() => 
-    expenses
-      .filter((e) => yearKey(e.date) === currentYear)
-      .reduce((sum, e) => sum + Number(e.amount || 0), 0), 
-    [expenses, currentYear]
-  );
+  function buildExpenseQueryForPeriod() {
+    // backend expects /api/expenses?from=YYYY-MM-DD&to=YYYY-MM-DD
+    if (period === "month") {
+      const from = `${currentMonth}-01`;
+      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const to = `${currentMonth}-${String(last).padStart(2, "0")}`;
+      return { from, to };
+    }
+
+    if (period === "year") {
+      return { from: `${currentYear}-01-01`, to: `${currentYear}-12-31` };
+    }
+
+    if (period === "custom") {
+      // allow partial; API supports either
+      return { from: customRange.from || "", to: customRange.to || "" };
+    }
+
+    // all time => no query params
+    return { from: "", to: "" };
+  }
+
+  async function fetchBudgets() {
+    const user_token = getUserToken();
+    if (!user_token) return;
+
+    setBudgetLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/budgets`, { headers: authHeaders() });
+      const payload = await safeJson(res);
+
+      if (!res.ok) throw new Error(payload?.message || "Failed to load budgets");
+      setAllBudgets(Array.isArray(payload?.budgets) ? payload.budgets : []);
+    } finally {
+      setBudgetLoading(false);
+    }
+  }
+
+  async function fetchExpensesForPeriod() {
+    const token = getUserToken();
+    if (!token) return;
+
+    const seq = ++reqSeqRef.current;
+    setExpensesLoading(true);
+
+    try {
+      const { from, to } = buildExpenseQueryForPeriod();
+      const qs = new URLSearchParams();
+      if (from) qs.set("from", from);
+      if (to) qs.set("to", to);
+
+      const url = qs.toString()
+        ? `${API_BASE}/api/expenses?${qs.toString()}`
+        : `${API_BASE}/api/expenses`;
+
+      const res = await fetch(url, { headers: authHeaders() });
+      const payload = await safeJson(res);
+
+      if (!res.ok) throw new Error(payload?.message || "Failed to load expenses");
+
+      // ignore stale response
+      if (seq !== reqSeqRef.current) return;
+
+      setExpenses(Array.isArray(payload?.expenses) ? payload.expenses : []);
+    } finally {
+      setExpensesLoading(false);
+    }
+  }
+
+  // initial load (when user changes): budgets once + expenses for current period
+  useEffect(() => {
+    const token = getUserToken();
+    if (!token) return;
+
+    setPageError("");
+    (async () => {
+      try {
+        await Promise.all([fetchBudgets(), fetchExpensesForPeriod()]);
+      } catch (e) {
+        setPageError(e?.message || "Failed to load dashboard data");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?._id, user?.email]);
+
+  // refetch expenses when dropdown changes (and when custom range changes)
+  useEffect(() => {
+    const token = getUserToken();
+    if (!token) return;
+
+    setPageError("");
+    fetchExpensesForPeriod().catch((e) => setPageError(e?.message || "Failed to load expenses"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, currentMonth, currentYear, customRange.from, customRange.to]);
+
+  // ---- Derived: filtered expenses (local, in case backend returns more) ----
+  const filteredExpenses = useMemo(() => {
+    if (period === "month") return expenses.filter((e) => monthKey(e.date) === currentMonth);
+    if (period === "year") return expenses.filter((e) => yearKey(e.date) === currentYear);
+    if (period === "custom") return expenses.filter((e) => inRange(e.date, customRange.from, customRange.to));
+    return expenses;
+  }, [expenses, period, currentMonth, currentYear, customRange.from, customRange.to]);
 
   const selectedTotal = useMemo(() => {
-    if (period === "month") return totalThisMonth;
-    if (period === "year") return totalThisYear;
-    return totalAllTime;
-  }, [period, totalThisMonth, totalThisYear, totalAllTime]);
+    return filteredExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  }, [filteredExpenses]);
 
   const pieData = useMemo(() => {
     const base = new Map();
     for (const c of CATEGORIES) base.set(c, 0);
 
-    const list =
-      period === "month"
-        ? expenses.filter((e) => monthKey(e.date) === currentMonth)
-        : period === "year"
-        ? expenses.filter((e) => yearKey(e.date) === currentYear)
-        : expenses;
-
-    list.forEach((e) => {
+    filteredExpenses.forEach((e) => {
       const key = CATEGORIES.includes(e.category) ? e.category : "Other";
       base.set(key, (base.get(key) || 0) + Number(e.amount || 0));
     });
@@ -238,40 +369,74 @@ export default function Dashboard() {
     return Array.from(base.entries())
       .map(([label, value]) => ({ label, value }))
       .filter((d) => d.value > 0);
-  }, [expenses, period, currentMonth, currentYear]);
+  }, [filteredExpenses]);
 
-  const budgetAmount = useMemo(() => {
-    if (period === "month") return budgets.month?.[currentMonth] || 0;
-    if (period === "year") return budgets.year?.[currentYear] || 0;
-    return 0;
-  }, [budgets, period, currentMonth, currentYear]);
+  // ✅ Total budget for selected period (history-only budgets)
+  const budgetTotalForSelectedPeriod = useMemo(() => {
+    if (!allBudgets?.length) return 0;
+
+    if (period === "month") {
+      return allBudgets
+        .filter((b) => b.month === currentMonth)
+        .reduce((sum, b) => sum + Number(b.amount || 0), 0);
+    }
+
+    if (period === "year") {
+      return allBudgets
+        .filter((b) => (b.month || "").startsWith(currentYear))
+        .reduce((sum, b) => sum + Number(b.amount || 0), 0);
+    }
+
+    if (period === "custom") {
+      return allBudgets
+        .filter((b) => monthInRange(b.month, customRange.from, customRange.to))
+        .reduce((sum, b) => sum + Number(b.amount || 0), 0);
+    }
+
+    return allBudgets.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  }, [allBudgets, period, currentMonth, currentYear, customRange.from, customRange.to]);
 
   const budgetPct = useMemo(() => {
-    if (!budgetAmount) return 0;
-    return Math.min(100, (selectedTotal / budgetAmount) * 100);
-  }, [selectedTotal, budgetAmount]);
+    if (!budgetTotalForSelectedPeriod) return 0;
+    return Math.min(100, (selectedTotal / budgetTotalForSelectedPeriod) * 100);
+  }, [selectedTotal, budgetTotalForSelectedPeriod]);
 
-  // Calculate if budget is exceeded
-  const isBudgetExceeded = useMemo(() => {
-    return budgetAmount > 0 && selectedTotal > budgetAmount;
-  }, [selectedTotal, budgetAmount]);
+  const isBudgetExceeded = useMemo(
+    () => budgetTotalForSelectedPeriod > 0 && selectedTotal > budgetTotalForSelectedPeriod,
+    [selectedTotal, budgetTotalForSelectedPeriod]
+  );
 
-  // Calculate extra cost amount (only positive when exceeded)
-  const extraCostAmount = useMemo(() => {
-    if (!isBudgetExceeded) return 0;
-    return selectedTotal - budgetAmount;
-  }, [selectedTotal, budgetAmount, isBudgetExceeded]);
+  const extraCostAmount = useMemo(
+    () => (isBudgetExceeded ? selectedTotal - budgetTotalForSelectedPeriod : 0),
+    [selectedTotal, budgetTotalForSelectedPeriod, isBudgetExceeded]
+  );
 
-  // Calculate remaining budget (negative when exceeded)
-  const remainingBudget = useMemo(() => {
-    return budgetAmount - selectedTotal;
-  }, [budgetAmount, selectedTotal]);
+  const remainingBudget = useMemo(
+    () => budgetTotalForSelectedPeriod - selectedTotal,
+    [budgetTotalForSelectedPeriod, selectedTotal]
+  );
 
   const averageDailySpending = useMemo(() => {
-    if (period === "month") return totalThisMonth / now.getDate();
-    if (period === "year") return totalThisYear / Math.ceil((now - new Date(currentYear, 0, 1)) / (1000 * 60 * 60 * 24));
-    return totalAllTime / 365;
-  }, [totalThisMonth, totalThisYear, totalAllTime, period, currentYear]);
+    if (period === "month") return selectedTotal / Math.max(1, now.getDate());
+    if (period === "year") return selectedTotal / 365;
+    if (period === "custom") {
+      const from = customRange.from ? new Date(customRange.from) : null;
+      const to = customRange.to ? new Date(customRange.to) : null;
+      if (from && to) {
+        const days = Math.max(1, Math.ceil((to - from) / (1000 * 60 * 60 * 24)) + 1);
+        return selectedTotal / days;
+      }
+      return selectedTotal / Math.max(1, now.getDate());
+    }
+    return selectedTotal / 365;
+  }, [period, selectedTotal, now, customRange.from, customRange.to]);
+
+  const periodLabel = useMemo(() => {
+    if (period === "month") return "This Month";
+    if (period === "year") return "This Year";
+    if (period === "custom") return "Custom";
+    return "All Time";
+  }, [period]);
 
   function openModal() {
     setModalOpen(true);
@@ -280,99 +445,23 @@ export default function Dashboard() {
 
   function closeModal() {
     setModalOpen(false);
-    setIsEditingBudget(false);
-    setBudgetForm({
-      mode: "month",
-      key: currentMonth,
-      amount: "",
-      notes: "",
-    });
-  }
-
-  function addExpense(e) {
-    e.preventDefault();
-    const payload = {
-      _id: crypto.randomUUID(),
-      title: expenseForm.title.trim(),
-      amount: Number(expenseForm.amount),
-      category: expenseForm.category,
-      date: expenseForm.date,
-      notes: expenseForm.notes.trim(),
-    };
-
-    if (!payload.title) return alert("Title is required.");
-    if (!payload.date) return alert("Date is required.");
-    if (!payload.amount || payload.amount <= 0) return alert("Amount must be > 0.");
-
-    setExpenses((prev) => [payload, ...prev]);
-    setExpenseForm((prev) => ({
-      title: "",
-      amount: "",
-      category: prev.category,
-      date: prev.date,
-      notes: "",
-    }));
-    closeModal();
-  }
-
-  function saveBudget(e) {
-    e.preventDefault();
-    const amount = Number(budgetForm.amount);
-
-    if (!budgetForm.key) return alert("Period is required.");
-    if (!amount || amount <= 0) return alert("Budget must be > 0.");
-
-    setBudgets((prev) => {
-      const next = { ...prev };
-      if (budgetForm.mode === "month") {
-        next.month = { ...(next.month || {}), [budgetForm.key]: amount };
-      } else {
-        next.year = { ...(next.year || {}), [budgetForm.key]: amount };
-      }
-      return next;
-    });
-
-    setBudgetForm({
-      mode: "month",
-      key: currentMonth,
-      amount: "",
-      notes: "",
-    });
-    setIsEditingBudget(false);
-    closeModal();
-  }
-
-  function editCurrentBudget() {
-    const currentBudget = period === "month" 
-      ? { type: "month", period: currentMonth, amount: budgetAmount }
-      : { type: "year", period: currentYear, amount: budgetAmount };
-    
-    if (currentBudget.amount > 0) {
-      setIsEditingBudget(true);
-      setBudgetForm({
-        mode: currentBudget.type,
-        key: currentBudget.period,
-        amount: currentBudget.amount.toString(),
-        notes: "",
-      });
-      setModalTab("budget");
-      setModalOpen(true);
-    }
+    setBudgetForm({ key: currentMonth, amount: "", notes: "" });
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Header */}
-      <header className="bg-white/90 backdrop-blur-xl border-b border-gray-200/50  top-0 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <header className="bg-white/90 backdrop-blur-xl border-b border-gray-200/50 top-0 z-50 shadow-sm">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Expense Manager</h1>
-              <p className="text-sm text-gray-600 mt-1">Track and manage your spending efficiently</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Expense Manager</h1>
+              <p className="text-xs sm:text-sm text-gray-600 mt-1">Track and manage your spending efficiently</p>
+              {pageError && <div className="mt-2 text-xs text-red-600">{pageError}</div>}
             </div>
-            
-            <div className="flex items-center gap-3">
-              <div className="relative w-48">
+
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-56">
                 <select
                   value={period}
                   onChange={(e) => setPeriod(e.target.value)}
@@ -381,232 +470,201 @@ export default function Dashboard() {
                   <option value="month">This Month</option>
                   <option value="year">This Year</option>
                   <option value="all">All Time</option>
+                  <option value="custom">Custom Range</option>
                 </select>
                 <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
               </div>
+
+              {period === "custom" && (
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <input
+                    type="date"
+                    value={customRange.from}
+                    onChange={(e) => setCustomRange((p) => ({ ...p, from: e.target.value }))}
+                    className="w-full sm:w-auto rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
+                  />
+                  <input
+                    type="date"
+                    value={customRange.to}
+                    onChange={(e) => setCustomRange((p) => ({ ...p, to: e.target.value }))}
+                    className="w-full sm:w-auto rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-6 lg:py-8">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 lg:mb-8">
+          <div className="bg-white rounded-2xl border border-gray-200 p-2 sm:p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Total Spent</p>
-                <p className="mt-2 text-3xl font-bold text-gray-900">{fmtMoney(selectedTotal)}</p>
+                <p className="text-xs sm:text-sm text-gray-500">Total Spent</p>
+                <p className="mt-1 sm:mt-2 text-xl sm:text-2xl lg:text-2xl font-bold text-gray-900">
+                  {fmtMoney(selectedTotal)}
+                </p>
               </div>
-              <div className="h-12 w-12 rounded-xl bg-gray-900/10 flex items-center justify-center">
-                <Wallet className="text-gray-900" size={24} />
+              <div className="h-10 w-10 rounded-xl bg-gray-900/10 flex items-center justify-center">
+                <Wallet className="text-gray-900" size={20} />
               </div>
             </div>
-            <p className="text-xs text-gray-500 mt-4">
-              {period === "month" ? "This month" : period === "year" ? "This year" : "All time"}
+            <p className="text-xs text-gray-500 mt-2 sm:mt-2">
+              {expensesLoading ? "Loading expenses..." : periodLabel}
             </p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+          {/* Budget card (period-based) */}
+          <div
+            className={`bg-white rounded-2xl border ${isBudgetExceeded ? "border-red-200" : "border-gray-200"} p-2 sm:p-4 shadow-sm`}
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Budget Used</p>
-                <p className="mt-2 text-3xl font-bold text-gray-900">{budgetPct.toFixed(1)}%</p>
-              </div>
-              <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                <TrendingUp className="text-blue-600" size={24} />
-              </div>
-            </div>
-            <div className="mt-4 h-2 rounded-full bg-gray-200 overflow-hidden">
-              <div 
-                className={`h-full rounded-full transition-all duration-500 ${
-                  budgetPct > 100 ? 'bg-red-500' : budgetPct > 90 ? 'bg-red-400' : budgetPct > 70 ? 'bg-yellow-500' : 'bg-green-500'
-                }`}
-                style={{ width: `${Math.min(budgetPct, 100)}%` }}
-              />
-            </div>
-            {isBudgetExceeded && (
-              <div className="mt-3 flex items-center gap-2 text-sm text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">
-                <AlertCircle size={14} />
-                <span>Exceeded by {fmtMoney(extraCostAmount)}</span>
-              </div>
-            )}
-          </div>
-
-          <div className={`bg-white rounded-2xl border ${isBudgetExceeded ? 'border-red-200' : 'border-gray-200'} p-6 shadow-sm`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Remaining Budget</p>
-                <p className={`mt-2 text-3xl font-bold ${isBudgetExceeded ? 'text-red-600' : 'text-gray-900'}`}>
+                <p className="text-xs sm:text-sm text-gray-500">Remaining Budget</p>
+                <p
+                  className={`mt-1 sm:mt-2 text-xl sm:text-2xl lg:text-2xl font-bold ${
+                    isBudgetExceeded ? "text-red-600" : "text-gray-900"
+                  }`}
+                >
                   {isBudgetExceeded ? `-${fmtMoney(extraCostAmount)}` : fmtMoney(Math.max(0, remainingBudget))}
                 </p>
               </div>
-              <div className={`h-12 w-12 rounded-xl ${isBudgetExceeded ? 'bg-red-100' : 'bg-green-100'} flex items-center justify-center`}>
+              <div
+                className={`h-10 w-10 rounded-xl ${isBudgetExceeded ? "bg-red-100" : "bg-green-100"} flex items-center justify-center`}
+              >
                 {isBudgetExceeded ? (
-                  <AlertCircle className="text-red-600" size={24} />
+                  <AlertCircle className="text-red-600" size={20} />
                 ) : (
-                  <TrendingDown className="text-green-600" size={24} />
+                  <TrendingDown className="text-green-600" size={20} />
                 )}
               </div>
             </div>
-            {isBudgetExceeded ? (
-              <div className="mt-4">
-                <div className="flex items-center gap-2 text-sm text-red-600 mb-2">
-                  <AlertCircle size={14} />
-                  <span>Budget exceeded</span>
-                </div>
-                <p className="text-xs text-gray-500">
-                  You've spent {fmtMoney(extraCostAmount)} more than your budget of {fmtMoney(budgetAmount)}
-                </p>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-500 mt-4">
-                {budgetAmount > 0 ? `Out of ${fmtMoney(budgetAmount)}` : "No budget set"}
-              </p>
-            )}
+
+            <p className="text-xs text-gray-500 mt-2 sm:mt-2">
+              {budgetLoading
+                ? "Loading budgets..."
+                : budgetTotalForSelectedPeriod > 0
+                ? `Out of ${fmtMoney(budgetTotalForSelectedPeriod)}`
+                : "No budget set for this period"}
+            </p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+          <div className="bg-white rounded-2xl border border-gray-200 p-2 sm:p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Avg. Daily</p>
-                <p className="mt-2 text-3xl font-bold text-gray-900">{fmtMoney(averageDailySpending)}</p>
+                <p className="text-xs sm:text-sm text-gray-500">Avg. Daily</p>
+                <p className="mt-1 sm:mt-2 text-xl sm:text-2xl lg:text-2xl font-bold text-gray-900">
+                  {fmtMoney(averageDailySpending)}
+                </p>
               </div>
-              <div className="h-12 w-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                <Calendar className="text-purple-600" size={24} />
+              <div className="h-10 w-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                <Calendar className="text-purple-600" size={20} />
               </div>
             </div>
-            <p className="text-xs text-gray-500 mt-4">Average spending per day</p>
+            <p className="text-xs text-gray-500 mt-2 sm:mt-2">Average spending per day</p>
           </div>
         </div>
 
         {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Chart */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-              <div className="mb-6">
-                <h2 className="text-xl font-bold text-gray-900">Spending Overview</h2>
-                <p className="text-sm text-gray-500 mt-1">Visual breakdown of your expenses</p>
+            <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-sm">
+              <div className="mb-4 sm:mb-6">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-900">Spending Overview</h2>
+                <p className="text-xs sm:text-sm text-gray-500 mt-1">Visual breakdown of your expenses</p>
               </div>
-              <PieChartComponent
-                data={pieData}
-                centerLabel={period === "month" ? "This Month" : period === "year" ? "This Year" : "All Time"}
-                size={260}
-              />
+              <PieChartComponent data={pieData} centerLabel={period === "custom" ? "Custom Range" : periodLabel} />
             </div>
           </div>
 
-          {/* Right Column - Budget Section */}
-          <div className="space-y-8">
-            {/* Single Budget Card */}
-            <div className={`bg-white rounded-2xl border ${isBudgetExceeded ? 'border-red-200' : 'border-gray-200'} p-6 shadow-sm`}>
-              <div className="flex items-center justify-between mb-6">
+          {/* Budget Section */}
+          <div className="space-y-6 lg:space-y-8">
+            <div
+              className={`bg-white rounded-2xl border ${isBudgetExceeded ? "border-red-200" : "border-gray-200"} p-5 sm:p-6 shadow-sm`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900">Budget</h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {period === "month" ? currentMonth : period === "year" ? currentYear : "All time"}
-                  </p>
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-900">Budget</h2>
+                  <p className="text-xs sm:text-sm text-gray-500 mt-1">{periodLabel}</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  {budgetAmount > 0 && (
-                    <button
-                      onClick={editCurrentBudget}
-                      className="inline-flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors"
-                      title="Edit budget"
-                    >
-                      <Edit2 size={12} />
-                      Edit
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      setModalTab("budget");
-                      setModalOpen(true);
-                    }}
-                    className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 transition-colors"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-white">
-                      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                    </svg>
-                    {budgetAmount > 0 ? "Add New" : "Set Budget"}
-                  </button>
-                </div>
+
+                <button
+                  onClick={() => {
+                    setBudgetForm({ key: currentMonth, amount: "", notes: "" });
+                    setModalTab("budget");
+                    setModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 transition-colors"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-white">
+                    <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                  </svg>
+                  <span className="hidden sm:inline">Add Budget</span>
+                </button>
               </div>
-              
-              {budgetAmount > 0 ? (
-                <>
-                  <div className="space-y-4">
+
+              {budgetTotalForSelectedPeriod > 0 ? (
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
+                      <span className="text-gray-600">Progress</span>
+                      <span className={`font-semibold ${isBudgetExceeded ? "text-red-600" : "text-gray-900"}`}>
+                        {budgetPct.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-3 rounded-full bg-gray-200 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-700 ${
+                          budgetPct > 100
+                            ? "bg-red-600"
+                            : budgetPct > 90
+                            ? "bg-red-400"
+                            : budgetPct > 70
+                            ? "bg-yellow-500"
+                            : "bg-green-500"
+                        }`}
+                        style={{ width: `${Math.min(budgetPct, 100)}%` }}
+                      />
+                    </div>
+                    {isBudgetExceeded && (
+                      <div className="mt-2 flex items-center gap-2 text-xs sm:text-sm text-red-600">
+                        <AlertCircle size={12} />
+                        <span>Exceeded by {fmtMoney(extraCostAmount)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
                     <div>
-                      <div className="flex items-center justify-between text-sm mb-2">
-                        <span className="text-gray-600">Progress</span>
-                        <span className={`font-semibold ${isBudgetExceeded ? 'text-red-600' : 'text-gray-900'}`}>
-                          {budgetPct.toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="h-3 rounded-full bg-gray-200 overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-700 ${
-                            budgetPct > 100 ? 'bg-red-600' : 
-                            budgetPct > 90 ? 'bg-red-400' : 
-                            budgetPct > 70 ? 'bg-yellow-500' : 'bg-green-500'
-                          }`}
-                          style={{ width: `${Math.min(budgetPct, 100)}%` }}
-                        />
-                      </div>
-                      {isBudgetExceeded && (
-                        <div className="mt-2 flex items-center gap-2 text-sm text-red-600">
-                          <AlertCircle size={14} />
-                          <span>Exceeded by {fmtMoney(extraCostAmount)}</span>
-                        </div>
-                      )}
+                      <p className="text-xs sm:text-sm text-gray-500">Spent ({periodLabel})</p>
+                      <p className={`text-base sm:text-lg font-semibold ${isBudgetExceeded ? "text-red-600" : "text-gray-900"}`}>
+                        {fmtMoney(selectedTotal)}
+                      </p>
                     </div>
-                    
-                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
-                      <div>
-                        <p className="text-sm text-gray-500">Spent</p>
-                        <p className={`text-lg font-semibold ${isBudgetExceeded ? 'text-red-600' : 'text-gray-900'}`}>
-                          {fmtMoney(selectedTotal)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500">Remaining</p>
-                        <p className={`text-lg font-semibold ${isBudgetExceeded ? 'text-red-600' : 'text-gray-900'}`}>
-                          {isBudgetExceeded ? `-${fmtMoney(extraCostAmount)}` : fmtMoney(Math.max(0, remainingBudget))}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="pt-4 border-t border-gray-100">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm text-gray-500">Total Budget</p>
-                          <p className="text-2xl font-bold text-gray-900">{fmtMoney(budgetAmount)}</p>
-                          {isBudgetExceeded && (
-                            <div className="mt-1 text-xs text-red-600">
-                              You've exceeded by {fmtMoney(extraCostAmount)}
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          onClick={editCurrentBudget}
-                          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="Edit budget"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                      </div>
+                    <div>
+                      <p className="text-xs sm:text-sm text-gray-500">Remaining</p>
+                      <p className={`text-base sm:text-lg font-semibold ${isBudgetExceeded ? "text-red-600" : "text-gray-900"}`}>
+                        {isBudgetExceeded ? `-${fmtMoney(extraCostAmount)}` : fmtMoney(Math.max(0, remainingBudget))}
+                      </p>
                     </div>
                   </div>
-                </>
+
+                  <div className="pt-4 border-t border-gray-100">
+                    <p className="text-xs sm:text-sm text-gray-500">Total Budget ({periodLabel})</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">{fmtMoney(budgetTotalForSelectedPeriod)}</p>
+                  </div>
+                </div>
               ) : (
-                <div className="text-center py-8">
-                  <div className="h-16 w-16 mx-auto rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                <div className="text-center py-6 sm:py-8">
+                  <div className="h-14 w-14 sm:h-16 sm:w-16 mx-auto rounded-full bg-gray-100 flex items-center justify-center mb-3 sm:mb-4">
                     <Wallet className="text-gray-400" size={24} />
                   </div>
-                  <p className="text-gray-500 mb-4">No budget set for this period</p>
+                  <p className="text-gray-500 mb-4">{budgetLoading ? "Loading..." : "No budget entries for this period"}</p>
                   <button
                     onClick={() => {
+                      setBudgetForm({ key: currentMonth, amount: "", notes: "" });
                       setModalTab("budget");
                       setModalOpen(true);
                     }}
@@ -615,7 +673,7 @@ export default function Dashboard() {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-white">
                       <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
                     </svg>
-                    Set Budget
+                    Add Budget
                   </button>
                 </div>
               )}
@@ -627,7 +685,7 @@ export default function Dashboard() {
       {/* Floating Plus Button */}
       <button
         onClick={openModal}
-        className="fixed bottom-8 right-8 h-16 w-16 rounded-2xl bg-gradient-to-br from-gray-900 to-gray-800 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 flex items-center justify-center z-40"
+        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-8 h-14 w-14 sm:h-16 sm:w-16 rounded-2xl bg-gradient-to-br from-gray-900 to-gray-800 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 flex items-center justify-center z-40 cursor-pointer"
         aria-label="Add new"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -637,22 +695,20 @@ export default function Dashboard() {
 
       {/* Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50">
-          <div 
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={closeModal}
-          />
-          
-          <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
-              {/* Tabs */}
+        <div className="fixed inset-0 z-50" onClick={closeModal}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="absolute inset-0 flex items-center justify-center p-2 sm:p-4">
+            <div
+              className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="border-b border-gray-200">
                 <div className="flex">
                   <button
                     onClick={() => setModalTab("expense")}
-                    className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-                      modalTab === "expense" 
-                        ? "text-gray-900 border-b-2 border-gray-900" 
+                    className={`flex-1 px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium transition-colors ${
+                      modalTab === "expense"
+                        ? "text-gray-900 border-b-2 border-gray-900"
                         : "text-gray-500 hover:text-gray-700"
                     }`}
                   >
@@ -660,52 +716,45 @@ export default function Dashboard() {
                   </button>
                   <button
                     onClick={() => setModalTab("budget")}
-                    className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-                      modalTab === "budget" 
-                        ? "text-gray-900 border-b-2 border-gray-900" 
+                    className={`flex-1 px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium transition-colors ${
+                      modalTab === "budget"
+                        ? "text-gray-900 border-b-2 border-gray-900"
                         : "text-gray-500 hover:text-gray-700"
                     }`}
                   >
-                    {isEditingBudget ? "Edit Budget" : "Add Budget"}
+                    Add Budget
                   </button>
                 </div>
               </div>
 
-              {/* Form Content */}
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 {modalTab === "expense" ? (
                   <AddExpenseForm
                     expenseForm={expenseForm}
                     setExpenseForm={setExpenseForm}
-                    onSubmit={addExpense}
                     categories={CATEGORIES}
+                    onCancel={closeModal}
+                    setModalOpen={setModalOpen}
+                    onCreated={(created) => {
+                      setExpenses((prev) => [created, ...prev]);
+                      // optional: refresh for current period to stay consistent with server
+                      fetchExpensesForPeriod().catch(() => {});
+                    }}
                   />
                 ) : (
                   <AddBudgetForm
                     budgetForm={budgetForm}
                     setBudgetForm={setBudgetForm}
-                    onSubmit={saveBudget}
                     currentMonth={currentMonth}
-                    currentYear={currentYear}
-                    isEditing={isEditingBudget}
+                    isEditing={false}
+                    setModalOpen={setModalOpen}
+                    onSaved={(budget) => {
+                      setAllBudgets((prev) => [budget, ...prev]);
+                      // budgets affect totals immediately
+                      fetchBudgets().catch(() => {});
+                    }}
                   />
                 )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-                <button
-                  onClick={closeModal}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={modalTab === "expense" ? addExpense : saveBudget}
-                  className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors"
-                >
-                  {modalTab === "expense" ? "Save Expense" : (isEditingBudget ? "Update Budget" : "Save Budget")}
-                </button>
               </div>
             </div>
           </div>
