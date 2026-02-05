@@ -6,3 +6,4 @@ gunicorn
 Werkzeug
 PyJWT
 flask-cors
+gunicorn
