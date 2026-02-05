@@ -1,10 +1,6 @@
 // src/components/AddBudgetForm.jsx
 import React, { useEffect, useState } from "react";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
-
-const getUserToken = () =>
-  sessionStorage.getItem("user_token") || localStorage.getItem("user_token") || "";
+import { useGlobal } from "../context/GlobalContext";
 
 export default function AddBudgetForm({
   budgetForm,
@@ -12,8 +8,9 @@ export default function AddBudgetForm({
   currentMonth,
   isEditing,
   setModalOpen,
-  onSaved, // callback to Dashboard
 }) {
+  const { token, prependBudget, fetchBudgets } = useGlobal();
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,8 +26,7 @@ export default function AddBudgetForm({
     e.preventDefault();
     setError("");
 
-    const user_token = getUserToken();
-    if (!user_token) {
+    if (!token) {
       setError("Please sign in again");
       return;
     }
@@ -44,15 +40,15 @@ export default function AddBudgetForm({
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/api/budgets/add`, {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/budgets/add`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${user_token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          month, // backend expects "month"
-          amount: amountNum, // ensure number
+          month,
+          amount: amountNum,
           notes: (budgetForm?.notes || "").trim(),
         }),
       });
@@ -65,12 +61,17 @@ export default function AddBudgetForm({
       }
 
       const created = payload?.budget;
-      if (created && onSaved) onSaved(created);
+
+      // ✅ instant UI update
+      if (created) prependBudget(created);
+
+      // ✅ optional: sync from server (in case server adjusts shape)
+      fetchBudgets().catch(() => {});
 
       // reset + close
       setBudgetForm({ key: currentMonth, amount: "", notes: "" });
       setModalOpen(false);
-    } catch (err) {
+    } catch {
       setError("Server error. Please try again.");
     } finally {
       setLoading(false);

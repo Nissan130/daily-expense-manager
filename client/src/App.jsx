@@ -3,9 +3,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useEffect, useState } from 'react';
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
-import Summary from "./pages/Summary";
+import History from "./pages/History";
 import ExportData from "./pages/ExportData";
-import Settings from "./pages/Settings";
+// import Settings from "./pages/Settings";
 import SignUp from "./pages/SignUp";
 import SignIn from './pages/SIgnIn';
 
@@ -19,11 +19,11 @@ function PrivateRoute({ children }) {
 function AppWithSidebar() {
   const getActivePage = () => {
     const path = window.location.pathname;
-    if (path.includes('summary')) return 'Summary';
+    if (path.includes('history')) return 'History';
     if (path.includes('stats')) return 'Stats';
     if (path.includes('income-manager')) return 'IncomeManager';
     if (path.includes('export')) return 'Export';
-    if (path.includes('settings')) return 'Settings';
+    // if (path.includes('settings')) return 'Settings';
     return 'Dashboard';
   };
 
@@ -32,14 +32,14 @@ function AppWithSidebar() {
       case 'Dashboard':
         window.location.href = '/';
         break;
-      case 'Summary':
-        window.location.href = '/summary';
+      case 'History':
+        window.location.href = '/history';
         break;
       case 'Export':
         window.location.href = '/export';
         break;
-      case 'Settings':
-        window.location.href = '/settings';
+      // case 'Settings':
+      //   window.location.href = '/settings';
         break;
       default:
         window.location.href = '/';
@@ -56,9 +56,9 @@ function AppWithSidebar() {
               <Dashboard />
             </PrivateRoute>
           } />
-          <Route path="/summary" element={
+          <Route path="/history" element={
             <PrivateRoute>
-              <Summary />
+              <History />
             </PrivateRoute>
           } />
           <Route path="/export" element={
@@ -66,11 +66,11 @@ function AppWithSidebar() {
               <ExportData />
             </PrivateRoute>
           } />
-          <Route path="/settings" element={
+          {/* <Route path="/settings" element={
             <PrivateRoute>
               <Settings />
             </PrivateRoute>
-          } />
+          } /> */}
         </Routes>
       </main>
     </div>

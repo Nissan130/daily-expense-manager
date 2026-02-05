@@ -47,9 +47,9 @@ export default function Sidebar({ active = "Dashboard", onSelect }) {
   const items = useMemo(
     () => [
       { key: "Dashboard", label: "Dashboard", icon: <Home size={20} /> },
-      { key: "Summary", label: "Summary", icon: <PieChart size={20} /> },
+      { key: "History", label: "History", icon: <PieChart size={20} /> },
       { key: "Export", label: "Export Data", icon: <Download size={20} /> },
-      { key: "Settings", label: "Settings", icon: <Settings size={20} /> },
+      // { key: "Settings", label: "Settings", icon: <Settings size={20} /> },
     ],
     []
   );

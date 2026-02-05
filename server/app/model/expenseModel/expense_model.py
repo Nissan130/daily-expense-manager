@@ -4,8 +4,6 @@ from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.errors import OperationFailure
 
-ALLOWED_CATEGORIES = {"Food", "Transport", "Bills", "Shopping", "Health", "Other"}
-
 
 def ensure_expense_indexes(expenses_col):
     """
@@ -18,7 +16,6 @@ def ensure_expense_indexes(expenses_col):
         ("idx_userEmail_createdAt_desc", [("userEmail", ASCENDING), ("createdAt", DESCENDING)]),
     ]
 
-    # existing indexes by name
     existing = {}
     try:
         for idx in expenses_col.list_indexes():
@@ -30,21 +27,16 @@ def ensure_expense_indexes(expenses_col):
         try:
             if name in existing:
                 ex = existing[name]
-                # ex["key"] is an OrderedDict-like mapping
                 ex_key = dict(ex.get("key", {}))
                 want_key = dict(keys)
 
-                # If same name but different key => drop old, recreate
                 if ex_key != want_key:
                     expenses_col.drop_index(name)
 
             expenses_col.create_index(keys, name=name)
 
         except OperationFailure as e:
-            # 85 IndexOptionsConflict, 86 IndexKeySpecsConflict
-            # If conflict still happens, don't crash the API.
             if getattr(e, "code", None) in (85, 86):
-                # Best effort: drop and recreate once
                 try:
                     expenses_col.drop_index(name)
                     expenses_col.create_index(keys, name=name)
@@ -76,11 +68,32 @@ def serialize_expense(doc):
     }
 
 
-def create_expense(expenses_col, *, userEmail, title, amount, category, date, notes=""):
+def _normalize_category(cat: str) -> str:
+    cat = " ".join((cat or "").strip().split())
+    if not cat:
+        return "Other"
+    if len(cat) > 32:
+        raise ValueError("Category must be <= 32 characters")
+    return cat
+
+
+def _category_allowed(category: str, allowed_categories: set[str] | None) -> bool:
+    """
+    allowed_categories should come from settings.categories (names).
+    Always allow 'Other'.
+    """
+    if allowed_categories is None:
+        # if caller didn't pass allowed list, we don't block
+        return True
+    allowed = set(allowed_categories)
+    allowed.add("Other")
+    return category in allowed
+
+
+def create_expense(expenses_col, *, userEmail, title, amount, category, date, notes="", allowed_categories=None):
     title = (title or "").strip()
     notes = (notes or "").strip()
     userEmail = (userEmail or "").strip().lower()
-    category = (category or "").strip()
 
     if not userEmail or "@" not in userEmail:
         raise ValueError("User email is required")
@@ -95,20 +108,22 @@ def create_expense(expenses_col, *, userEmail, title, amount, category, date, no
     if amount <= 0:
         raise ValueError("Amount must be > 0")
 
-    if category and category not in ALLOWED_CATEGORIES:
-        raise ValueError("Invalid category")
-
     if not date:
         raise ValueError("Date is required")
-
     date_iso = _to_iso_date(date)
+
+    category = _normalize_category(category)
+
+    # ✅ validate using settings categories (not hardcoded)
+    if not _category_allowed(category, allowed_categories):
+        raise ValueError("Invalid category")
 
     now = datetime.utcnow().isoformat()
     payload = {
         "userEmail": userEmail,
         "title": title,
         "amount": amount,
-        "category": category or "Other",
+        "category": category,
         "date": date_iso,
         "notes": notes,
         "createdAt": now,
@@ -134,28 +149,22 @@ def get_expenses(expenses_col, *, userEmail, date_from=None, date_to=None, limit
         if date_to:
             q["date"]["$lte"] = _to_iso_date(date_to)
 
-    cur = (
-        expenses_col.find(q)
-        .sort("date", DESCENDING)
-        .skip(int(skip))
-        .limit(int(limit))
-    )
-
+    cur = expenses_col.find(q).sort("date", DESCENDING).skip(int(skip)).limit(int(limit))
     return [serialize_expense(d) for d in cur]
 
 
-def update_expense(expenses_col, *, expense_id, userEmail, patch: dict):
+def update_expense(expenses_col, *, expense_id, userEmail, patch: dict, allowed_categories=None):
     userEmail = (userEmail or "").strip().lower()
     if not userEmail:
         raise ValueError("User email is required")
 
     oid = ObjectId(expense_id)
 
-    allowed = {"title", "amount", "category", "date", "notes"}
+    allowed_fields = {"title", "amount", "category", "date", "notes"}
     update = {}
 
     for k, v in (patch or {}).items():
-        if k not in allowed:
+        if k not in allowed_fields:
             continue
 
         if k == "title":
@@ -174,10 +183,13 @@ def update_expense(expenses_col, *, expense_id, userEmail, patch: dict):
             update["amount"] = v
 
         elif k == "category":
-            v = (v or "").strip()
-            if v and v not in ALLOWED_CATEGORIES:
+            cat = _normalize_category(v)
+
+            # ✅ validate using settings categories (not hardcoded)
+            if not _category_allowed(cat, allowed_categories):
                 raise ValueError("Invalid category")
-            update["category"] = v or "Other"
+
+            update["category"] = cat
 
         elif k == "date":
             if not v:

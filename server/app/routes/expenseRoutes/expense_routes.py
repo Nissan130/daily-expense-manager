@@ -14,6 +14,10 @@ from app.model.expenseModel.expense_model import (
     update_expense,
     delete_expense,
 )
+from app.model.settingsModel.settings_model import (
+    ensure_settings_indexes,
+    list_categories,
+)
 
 expense_bp = Blueprint("expenses", __name__, url_prefix="/api/expenses")
 
@@ -50,7 +54,6 @@ def _valid_month(month: str) -> str:
 
 
 def _valid_date(date_str: str) -> str:
-    # strict YYYY-MM-DD
     d = (date_str or "").strip()
     datetime.strptime(d, "%Y-%m-%d")
     return d
@@ -70,6 +73,16 @@ def _year_to_from_to(year: str) -> tuple[str, str]:
     return (f"{year}-01-01", f"{year}-12-31")
 
 
+def _get_allowed_categories(db, userEmail: str) -> set[str]:
+    """
+    Pull allowed categories for this user from settings collection.
+    """
+    settings_col = db["settings"]
+    ensure_settings_indexes(settings_col)
+    cats = list_categories(settings_col, userEmail)  # [{name,color}, ...]
+    return {c.get("name") for c in cats if c.get("name")}
+
+
 @expense_bp.post("/add")
 @require_auth
 def add_expense():
@@ -77,18 +90,22 @@ def add_expense():
     userEmail = get_authed_email()
 
     db = get_db(current_app)
+
     col = db["expenses"]
     ensure_expense_indexes(col)
 
     try:
+        allowed = _get_allowed_categories(db, userEmail)
+
         exp = create_expense(
             col,
             userEmail=userEmail,
             title=data.get("title"),
             amount=data.get("amount"),
             category=data.get("category"),
-            date=data.get("date"),  # expects YYYY-MM-DD
+            date=data.get("date"),
             notes=data.get("notes", ""),
+            allowed_categories=allowed,  # ✅
         )
         return jsonify({"success": True, "message": "Expense added", "expense": exp}), 201
     except ValueError as e:
@@ -100,36 +117,22 @@ def add_expense():
 @expense_bp.get("")
 @require_auth
 def list_expenses():
-    """
-    GET /api/expenses
-    Optional query params:
-      - from=YYYY-MM-DD
-      - to=YYYY-MM-DD
-      - month=YYYY-MM        (convenience; translated to real last day)
-      - year=YYYY            (convenience)
-      - limit=200
-      - skip=0
-    Precedence:
-      from/to (if any) override month/year.
-    """
     userEmail = get_authed_email()
 
-    date_from = request.args.get("from")  # YYYY-MM-DD
-    date_to = request.args.get("to")      # YYYY-MM-DD
-    month = request.args.get("month")     # YYYY-MM
-    year = request.args.get("year")       # YYYY
+    date_from = request.args.get("from")
+    date_to = request.args.get("to")
+    month = request.args.get("month")
+    year = request.args.get("year")
 
     limit = request.args.get("limit", 200)
     skip = request.args.get("skip", 0)
 
     try:
-        # Validate / normalize filters
         if date_from:
             date_from = _valid_date(date_from)
         if date_to:
             date_to = _valid_date(date_to)
 
-        # Only apply month/year if from/to not provided at all
         if (not date_from and not date_to) and month:
             date_from, date_to = _month_to_from_to(month)
 
@@ -167,7 +170,15 @@ def edit_expense(expense_id):
     ensure_expense_indexes(col)
 
     try:
-        updated = update_expense(col, expense_id=expense_id, userEmail=userEmail, patch=data)
+        allowed = _get_allowed_categories(db, userEmail)
+
+        updated = update_expense(
+            col,
+            expense_id=expense_id,
+            userEmail=userEmail,
+            patch=data,
+            allowed_categories=allowed,  # ✅
+        )
         if not updated:
             return jsonify({"success": False, "message": "Expense not found"}), 404
         return jsonify({"success": True, "message": "Expense updated", "expense": updated}), 200

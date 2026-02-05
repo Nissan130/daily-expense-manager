@@ -1,20 +1,29 @@
 // src/components/AddExpenseForm.jsx
-import React, { useState } from "react";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
-
-const getUserToken = () =>
-  sessionStorage.getItem("user_token") || localStorage.getItem("user_token") || "";
+import React, { useEffect, useState } from "react";
+import { useGlobal } from "../context/GlobalContext";
 
 export default function AddExpenseForm({
   expenseForm,
   setExpenseForm,
-  categories,
+  categories = [],
+  CategoryDropdown, // optional component injected from Dashboard
   setModalOpen,
-  onCreated, // optional: parent can pass a function(expense) to update list without refetch
+  onCreated, // optional callback
+  onCancel, // optional callback
 }) {
+  const { token, prependExpense, API_BASE } = useGlobal();
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // ✅ ensure default category if not set
+  useEffect(() => {
+    if (!expenseForm.category) {
+      const fallback = categories?.[0] || "Other";
+      setExpenseForm((p) => ({ ...p, category: fallback }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categories?.length]);
 
   const validate = () => {
     if (!expenseForm.title?.trim()) return "Title is required";
@@ -29,13 +38,9 @@ export default function AddExpenseForm({
     setError("");
 
     const msg = validate();
-    if (msg) {
-      setError(msg);
-      return;
-    }
+    if (msg) return setError(msg);
 
-    const user_token = getUserToken();
-    if (!user_token) {
+    if (!token) {
       setError("You are not logged in. Please sign in again.");
       return;
     }
@@ -46,13 +51,13 @@ export default function AddExpenseForm({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${user_token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           title: expenseForm.title.trim(),
-          amount: expenseForm.amount, // backend converts to float
+          amount: Number(expenseForm.amount),
           category: expenseForm.category,
-          date: expenseForm.date, // "YYYY-MM-DD"
+          date: expenseForm.date,
           notes: expenseForm.notes || "",
         }),
       });
@@ -66,24 +71,32 @@ export default function AddExpenseForm({
 
       const created = payload?.expense;
 
-      // Optional: update UI instantly without refetch
-      if (onCreated && created) onCreated(created);
+      if (created) {
+        prependExpense(created);
+        if (onCreated) onCreated(created);
+      }
 
-      // reset form
+      // reset form (keep date + category)
       setExpenseForm((prev) => ({
         ...prev,
         title: "",
         amount: "",
         notes: "",
-        // keep category/date if you want; change if you want to reset them too
       }));
 
       setModalOpen(false);
-    } catch (err) {
-      setError("Cannot connect to server. Make sure backend is running.");
+    } catch (e2) {
+      setError(e2?.message || "Cannot connect to server. Make sure backend is running.");
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleCancel = () => {
+    setError("");
+    setExpenseForm((prev) => ({ ...prev, title: "", amount: "", notes: "" }));
+    if (onCancel) onCancel();
+    setModalOpen(false);
   };
 
   return (
@@ -98,7 +111,7 @@ export default function AddExpenseForm({
         <div>
           <label className="text-sm font-medium text-gray-700">Title</label>
           <input
-            value={expenseForm.title}
+            value={expenseForm.title || ""}
             onChange={(e) => setExpenseForm({ ...expenseForm, title: e.target.value })}
             placeholder="e.g., Lunch"
             className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
@@ -111,7 +124,7 @@ export default function AddExpenseForm({
             <input
               type="number"
               step="0.01"
-              value={expenseForm.amount}
+              value={expenseForm.amount || ""}
               onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
               placeholder="e.g., 120"
               className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
@@ -122,33 +135,44 @@ export default function AddExpenseForm({
             <label className="text-sm font-medium text-gray-700">Date</label>
             <input
               type="date"
-              value={expenseForm.date}
+              value={expenseForm.date || ""}
               onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
               className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
             />
           </div>
         </div>
 
+        {/* ✅ Category */}
         <div>
           <label className="text-sm font-medium text-gray-700">Category</label>
-          <select
-            value={expenseForm.category}
-            onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-            className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10 bg-white"
-          >
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+
+          {CategoryDropdown ? (
+            <div className="mt-1">
+              <CategoryDropdown
+                value={expenseForm.category}
+                onChange={(cat) => setExpenseForm({ ...expenseForm, category: cat })}
+              />
+            </div>
+          ) : (
+            <select
+              value={expenseForm.category || ""}
+              onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
+            >
+              {(categories?.length ? categories : ["Other"]).map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div>
           <label className="text-sm font-medium text-gray-700">Notes (optional)</label>
           <textarea
             rows={3}
-            value={expenseForm.notes}
+            value={expenseForm.notes || ""}
             onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
             placeholder="Any extra detail..."
             className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-900/10"
@@ -158,15 +182,7 @@ export default function AddExpenseForm({
         <div className="flex gap-3">
           <button
             type="button"
-            onClick={() => {
-              setExpenseForm((prev) => ({
-                ...prev,
-                title: "",
-                amount: "",
-                notes: "",
-              }));
-              setModalOpen(false);
-            }}
+            onClick={handleCancel}
             className="w-full rounded-xl bg-gray-500 text-white py-2.5 font-medium transition cursor-pointer"
           >
             Cancel
